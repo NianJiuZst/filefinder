@@ -65,16 +65,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Linux binary
-        run: gh release upload ${{ github.ref_name }} artifacts/filefinder-ubuntu-latest/filefinder
+        run: gh release upload ${{ github.ref_name }} artifacts/filefinder-ubuntu-latest/filefinder --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload macOS binary
-        run: gh release upload ${{ github.ref_name }} artifacts/filefinder-macos-latest/filefinder
+        run: gh release upload ${{ github.ref_name }} artifacts/filefinder-macos-latest/filefinder --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Windows binary
-        run: gh release upload ${{ github.ref_name }} artifacts/filefinder-windows-latest/filefinder.exe
+        run: gh release upload ${{ github.ref_name }} artifacts/filefinder-windows-latest/filefinder.exe --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
