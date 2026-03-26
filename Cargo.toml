@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-walkdir = "2"
+jwalk = "0.8"    # Parallel directory traversal (faster than walkdir)
+num_cpus = "1"   # Get CPU count for jwalk parallelism
 ignore = "=0.4.16"
 rayon = "=1.8.0"
 regex = "1"

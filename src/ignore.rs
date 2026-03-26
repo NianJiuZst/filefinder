@@ -1,5 +1,6 @@
 use ignore::gitignore::Gitignore;
 use std::path::Path;
+use std::path::MAIN_SEPARATOR;
 
 #[derive(Debug, Clone)]
 pub struct IgnoreRules {
@@ -30,26 +31,31 @@ impl IgnoreRules {
     }
 
     pub fn should_ignore(&self, path: &Path) -> bool {
+        // Fast path: convert to string once and use string operations
+        // This is much faster than iterating through path.components() every time
+        let path_str = path.to_string_lossy();
+        let sep = MAIN_SEPARATOR;
+
         // Check for .git directory
         if self.ignore_git {
-            for component in path.components() {
-                if component.as_os_str() == ".git" {
-                    return true;
-                }
+            // Match /.git or /.git/ or ends with /.git
+            if path_str.contains(&format!("{sep}.git{sep}"))
+                || path_str.ends_with(&format!("{sep}.git"))
+            {
+                return true;
             }
         }
 
         // Check for node_modules
         if self.ignore_node {
-            for component in path.components() {
-                if component.as_os_str() == "node_modules" {
-                    return true;
-                }
+            if path_str.contains(&format!("{sep}node_modules{sep}"))
+                || path_str.ends_with(&format!("{sep}node_modules"))
+            {
+                return true;
             }
         }
 
         // Check against .gitignore patterns
-        let path_str = path.to_string_lossy();
         for glob in &self.extra_ignores {
             if let ignore::Match::Ignore(_) = glob.matched(path_str.as_ref(), path.is_dir())
             {
