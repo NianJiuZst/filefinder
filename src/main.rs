@@ -13,6 +13,15 @@ use config::SearchConfig;
 use output::Output;
 use scanner::Scanner;
 
+// ANSI color codes for banner
+const BANNER_CYAN: &str = "\x1b[36m";
+const BANNER_GREEN: &str = "\x1b[32m";
+const BANNER_YELLOW: &str = "\x1b[33m";
+const BANNER_MAGENTA: &str = "\x1b[35m";
+const BANNER_DIM: &str = "\x1b[2m";
+const BANNER_BOLD: &str = "\x1b[1m";
+const BANNER_RESET: &str = "\x1b[0m";
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("Error: {}", e);
@@ -20,11 +29,34 @@ fn main() {
     }
 }
 
+fn print_banner() {
+    println!();
+    println!("{}╭──────────────────────────────────────────────────────────────╮{}", BANNER_CYAN, BANNER_RESET);
+    println!("{}│{}  {}🔍{} {}FileFinder{} {}─{} 文件查找神器                          {}│{}", 
+        BANNER_CYAN, BANNER_RESET, BANNER_YELLOW, BANNER_RESET, BANNER_BOLD, BANNER_RESET, BANNER_CYAN, BANNER_RESET, BANNER_CYAN, BANNER_RESET);
+    println!("{}│{}                                                              {}│{}", BANNER_CYAN, BANNER_RESET, BANNER_CYAN, BANNER_RESET);
+    println!("{}│{}  {}📂{} {}快速定位文件{}     {}⚡{} {}多种匹配方式{}     {}🎯{} {}交互式选择{}        {}│{}", 
+        BANNER_CYAN, BANNER_RESET, BANNER_GREEN, BANNER_RESET, BANNER_DIM, BANNER_RESET,
+        BANNER_YELLOW, BANNER_RESET, BANNER_DIM, BANNER_RESET,
+        BANNER_MAGENTA, BANNER_RESET, BANNER_DIM, BANNER_RESET,
+        BANNER_CYAN, BANNER_RESET);
+    println!("{}│{}  {}🔧{} {}大小/时间过滤{}   {}💡{} {}正则支持{}       {}🚀{} {}高性能扫描{}        {}│{}", 
+        BANNER_CYAN, BANNER_RESET, BANNER_GREEN, BANNER_RESET, BANNER_DIM, BANNER_RESET,
+        BANNER_YELLOW, BANNER_RESET, BANNER_DIM, BANNER_RESET,
+        BANNER_MAGENTA, BANNER_RESET, BANNER_DIM, BANNER_RESET,
+        BANNER_CYAN, BANNER_RESET);
+    println!("{}│{}                                                              {}│{}", BANNER_CYAN, BANNER_RESET, BANNER_CYAN, BANNER_RESET);
+    println!("{}╰──────────────────────────────────────────────────────────────╯{}", BANNER_CYAN, BANNER_RESET);
+    println!();
+    println!("  {}输入 {}help{} {}查看命令帮助  ·  输入 {}quit{} {}退出程序", 
+        BANNER_DIM, BANNER_CYAN, BANNER_RESET, BANNER_DIM, BANNER_CYAN, BANNER_RESET, BANNER_DIM);
+    println!();
+}
+
 fn run() -> Result<()> {
     let mut output = Output::new();
     
-    println!("FileFinder - 文件查找工具");
-    println!("输入 'help' 查看命令帮助，输入 'quit' 退出程序\n");
+    print_banner();
     
     loop {
         print!("filefinder> ");
