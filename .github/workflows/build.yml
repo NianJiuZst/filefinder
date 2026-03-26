@@ -1,9 +1,10 @@
-name: Build & Release
+name: Build
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -26,19 +27,50 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.platform }}" = "windows-latest" ]; then
-            mv target/release/filefinder.exe filefinder.exe
+            cp target/release/filefinder.exe filefinder.exe
             echo "ASSET_NAME=filefinder.exe" >> $GITHUB_ENV
           else
             echo "ASSET_NAME=filefinder" >> $GITHUB_ENV
           fi
 
-      - name: Upload binary
-        uses: actions/upload-release-asset@v1
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ github.event.inputs.upload_url || github.event.release.upload_url }}
-          asset_path: target/release/${{ env.ASSET_NAME }}
-          asset_name: ${{ env.ASSET_NAME }}
-          asset_content_type: application/octet-stream
+          name: filefinder-${{ matrix.platform }}
+          path: target/release/${{ env.ASSET_NAME }}
+          retention-days: 7
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "filefinder ${{ github.ref_name }}" \
+            --notes "Multi-platform binary release"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        if: github.event.inputs.upload_url != '' || startsWith(github.ref, 'refs/tags/v')
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux binary
+        run: gh release upload ${{ github.ref_name }} artifacts/filefinder-ubuntu-latest/filefinder
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS binary
+        run: gh release upload ${{ github.ref_name }} artifacts/filefinder-macos-latest/filefinder
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows binary
+        run: gh release upload ${{ github.ref_name }} artifacts/filefinder-windows-latest/filefinder.exe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
