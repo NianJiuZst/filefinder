@@ -70,7 +70,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload macOS binary
-        run: gh release upload ${{ github.ref_name }} artifacts/filefinder-macos-latest/filefinder --clobber
+        run: |
+          cp artifacts/filefinder-macos-latest/filefinder filefinder-macos
+          gh release upload ${{ github.ref_name }} filefinder-macos --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
