@@ -42,23 +42,26 @@ impl SizeRange {
 
 fn parse_size(s: &str) -> Result<u64> {
     let s = s.trim();
-    let s_upper = s.to_uppercase();
-    let (num_str, unit) = if let Some(rest) = s_upper.strip_suffix('B') {
-        (rest, "B".to_string())
-    } else {
-        (s_upper.as_str(), "".to_string())
-    };
+    let split_at = s
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(s.len());
+    let (num_str, unit) = s.split_at(split_at);
 
     let num: f64 = num_str.parse()?;
-    let multiplier: u64 = match unit.as_str() {
-        "" => 1,
-        "B" => 1,
-        "K" | "KB" => 1024,
-        "M" | "MB" => 1024 * 1024,
-        "G" | "GB" => 1024 * 1024 * 1024,
-        "T" | "TB" => 1024 * 1024 * 1024 * 1024,
-        _ => anyhow::bail!("Unknown size unit: {}", s),
+    let multiplier: u64 = if unit.is_empty() || unit.eq_ignore_ascii_case("B") {
+        1
+    } else if unit.eq_ignore_ascii_case("K") || unit.eq_ignore_ascii_case("KB") {
+        1024
+    } else if unit.eq_ignore_ascii_case("M") || unit.eq_ignore_ascii_case("MB") {
+        1024 * 1024
+    } else if unit.eq_ignore_ascii_case("G") || unit.eq_ignore_ascii_case("GB") {
+        1024 * 1024 * 1024
+    } else if unit.eq_ignore_ascii_case("T") || unit.eq_ignore_ascii_case("TB") {
+        1024 * 1024 * 1024 * 1024
+    } else {
+        anyhow::bail!("Unknown size unit: {}", s);
     };
+
     Ok((num * multiplier as f64) as u64)
 }
 
@@ -123,5 +126,31 @@ impl From<Args> for SearchConfig {
             max_depth: args.max_depth,
             interactive: args.interactive,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SizeRange;
+
+    #[test]
+    fn parses_size_units_without_dropping_filters() {
+        let range = SizeRange::parse("10K..1MB").unwrap();
+
+        assert_eq!(range.min, Some(10 * 1024));
+        assert_eq!(range.max, Some(1024 * 1024));
+        assert!(range.contains(64 * 1024));
+        assert!(!range.contains(2 * 1024 * 1024));
+    }
+
+    #[test]
+    fn parses_open_ended_size_ranges() {
+        let min_only = SizeRange::parse("1.5M..").unwrap();
+        let max_only = SizeRange::parse("..2G").unwrap();
+
+        assert_eq!(min_only.min, Some(1_572_864));
+        assert_eq!(min_only.max, None);
+        assert_eq!(max_only.min, None);
+        assert_eq!(max_only.max, Some(2 * 1024 * 1024 * 1024));
     }
 }
