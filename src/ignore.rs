@@ -1,6 +1,6 @@
 use ignore::gitignore::Gitignore;
-use std::path::Path;
-use std::path::MAIN_SEPARATOR;
+use std::ffi::OsStr;
+use std::path::{Component, Path};
 
 #[derive(Debug, Clone)]
 pub struct IgnoreRules {
@@ -30,39 +30,46 @@ impl IgnoreRules {
         Ok(())
     }
 
-    pub fn should_ignore(&self, path: &Path) -> bool {
-        // Fast path: convert to string once and use string operations
-        // This is much faster than iterating through path.components() every time
-        let path_str = path.to_string_lossy();
-        let sep = MAIN_SEPARATOR;
-
-        // Check for .git directory
-        if self.ignore_git {
-            // Match /.git or /.git/ or ends with /.git
-            if path_str.contains(&format!("{sep}.git{sep}"))
-                || path_str.ends_with(&format!("{sep}.git"))
-            {
-                return true;
-            }
+    pub fn should_ignore(&self, path: &Path, is_dir: bool) -> bool {
+        if self.ignore_git && has_component(path, ".git") {
+            return true;
         }
 
-        // Check for node_modules
-        if self.ignore_node {
-            if path_str.contains(&format!("{sep}node_modules{sep}"))
-                || path_str.ends_with(&format!("{sep}node_modules"))
-            {
-                return true;
-            }
+        if self.ignore_node && has_component(path, "node_modules") {
+            return true;
         }
 
-        // Check against .gitignore patterns
         for glob in &self.extra_ignores {
-            if let ignore::Match::Ignore(_) = glob.matched(path_str.as_ref(), path.is_dir())
-            {
+            if let ignore::Match::Ignore(_) = glob.matched(path, is_dir) {
                 return true;
             }
         }
 
         false
+    }
+}
+
+fn has_component(path: &Path, name: &str) -> bool {
+    let name = OsStr::new(name);
+    path.components().any(|component| {
+        matches!(component, Component::Normal(part) if part == name)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IgnoreRules;
+    use std::path::Path;
+
+    #[test]
+    fn ignores_common_heavy_directories_by_component() {
+        let rules = IgnoreRules::new(true, true);
+
+        assert!(rules.should_ignore(Path::new("/repo/.git/config"), false));
+        assert!(rules.should_ignore(
+            Path::new("/repo/packages/node_modules/lib/index.js"),
+            false
+        ));
+        assert!(!rules.should_ignore(Path::new("/repo/src/git_helpers.rs"), false));
     }
 }

@@ -59,7 +59,10 @@ impl Scanner {
                 continue;
             }
 
-            if self.ignore_rules.should_ignore(&path) {
+            if self
+                .ignore_rules
+                .should_ignore(&path, entry.file_type().is_dir())
+            {
                 if entry.file_type().is_dir() {
                     // Skip entire directory
                     continue;
