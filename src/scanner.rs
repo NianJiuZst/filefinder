@@ -45,11 +45,27 @@ impl Scanner {
         let config = &self.config;
         // Collect files to check first (jwalk parallel traversal)
         let mut files_to_check: Vec<PathBuf> = Vec::new();
+        let ignore_rules = self.ignore_rules.clone();
 
         let walker = WalkDir::new(&config.path)
             .follow_links(false)
             .max_depth(config.max_depth.unwrap_or(usize::MAX))
-            .parallelism(jwalk::Parallelism::RayonNewPool(num_cpus::get()));
+            .parallelism(jwalk::Parallelism::RayonNewPool(num_cpus::get()))
+            .process_read_dir(move |depth, _, _, children| {
+                if depth.is_none() {
+                    return;
+                }
+
+                children.retain(|entry_result| {
+                    entry_result
+                        .as_ref()
+                        .map(|entry| {
+                            let path = entry.path();
+                            !ignore_rules.should_ignore(&path, entry.file_type().is_dir())
+                        })
+                        .unwrap_or(false)
+                });
+            });
 
         for entry in walker.into_iter().filter_map(|e| e.ok()) {
             let path = entry.path().to_path_buf();
@@ -57,16 +73,6 @@ impl Scanner {
             // Skip the root path itself
             if path == config.path {
                 continue;
-            }
-
-            if self
-                .ignore_rules
-                .should_ignore(&path, entry.file_type().is_dir())
-            {
-                if entry.file_type().is_dir() {
-                    // Skip entire directory
-                    continue;
-                }
             }
 
             if entry.file_type().is_file() {
@@ -135,5 +141,56 @@ impl Scanner {
             .collect();
 
         matched_entries
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Scanner;
+    use crate::config::SearchConfig;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn scan_prunes_ignored_directories_before_descending() {
+        let root = temp_root("prune");
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
+        fs::write(root.join("src/keep.rs"), "").unwrap();
+        fs::write(root.join("node_modules/pkg/skip.rs"), "").unwrap();
+
+        let scanner = Scanner::new(SearchConfig {
+            path: root.clone(),
+            pattern: None,
+            ext: Some("rs".to_string()),
+            size_range: None,
+            use_regex: false,
+            ignore_git: true,
+            ignore_node: true,
+            max_depth: None,
+            interactive: false,
+        })
+        .unwrap();
+
+        let entries = scanner.scan();
+        let names: Vec<_> = entries
+            .iter()
+            .filter_map(|entry| entry.path.file_name())
+            .collect();
+
+        assert_eq!(names, vec!["keep.rs"]);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn temp_root(name: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        path.push(format!("filefinder-{name}-{}-{now}", std::process::id()));
+        path
     }
 }
