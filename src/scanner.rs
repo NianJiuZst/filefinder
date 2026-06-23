@@ -1,21 +1,23 @@
 use anyhow::Result;
-use rayon::prelude::*;
-use std::fs;
-use std::path::PathBuf;
-use std::time::UNIX_EPOCH;
+use jwalk::{Parallelism, WalkDirGeneric};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, UNIX_EPOCH};
 
 use crate::config::SearchConfig;
 use crate::ignore::IgnoreRules;
 use crate::matcher::Matcher;
-
-// Use jwalk for parallel directory traversal (faster than walkdir)
-use jwalk::WalkDir;
 
 #[derive(Debug, Clone)]
 pub struct FileEntry {
     pub path: PathBuf,
     pub size: u64,
     pub mtime: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct FileMetadata {
+    size: u64,
+    mtime: u64,
 }
 
 pub struct Scanner {
@@ -26,10 +28,11 @@ pub struct Scanner {
 
 impl Scanner {
     pub fn new(config: SearchConfig) -> Result<Self> {
-        let matcher = config.pattern.as_ref().map(|p| {
-            crate::matcher::create_matcher(p, config.use_regex)
-                .expect("Failed to create matcher")
-        });
+        let matcher = config
+            .pattern
+            .as_ref()
+            .map(|p| crate::matcher::create_matcher(p, config.use_regex))
+            .transpose()?;
 
         let mut ignore_rules = IgnoreRules::new(config.ignore_git, config.ignore_node);
         ignore_rules.add_gitignore(&config.path).ok();
@@ -43,104 +46,96 @@ impl Scanner {
 
     pub fn scan(&self) -> Vec<FileEntry> {
         let config = &self.config;
-        // Collect files to check first (jwalk parallel traversal)
-        let mut files_to_check: Vec<PathBuf> = Vec::new();
         let ignore_rules = self.ignore_rules.clone();
+        let name_filter = self.matcher.clone();
+        let ext_filter = self.config.ext.clone();
+        let size_filter = self.config.size_range.clone();
 
-        let walker = WalkDir::new(&config.path)
+        let walker = WalkDirGeneric::<((), Option<FileMetadata>)>::new(&config.path)
             .follow_links(false)
             .max_depth(config.max_depth.unwrap_or(usize::MAX))
-            .parallelism(jwalk::Parallelism::RayonNewPool(num_cpus::get()))
+            .parallelism(Parallelism::RayonDefaultPool {
+                busy_timeout: Duration::from_secs(1),
+            })
             .process_read_dir(move |depth, _, _, children| {
                 if depth.is_none() {
                     return;
                 }
 
-                children.retain(|entry_result| {
-                    entry_result
-                        .as_ref()
-                        .map(|entry| {
-                            let path = entry.path();
-                            !ignore_rules.should_ignore(&path, entry.file_type().is_dir())
-                        })
-                        .unwrap_or(false)
+                children.retain_mut(|entry_result| {
+                    let entry = match entry_result {
+                        Ok(entry) => entry,
+                        Err(_) => return false,
+                    };
+                    let path = entry.path();
+
+                    if ignore_rules.should_ignore(&path, entry.file_type().is_dir()) {
+                        return false;
+                    }
+
+                    if !entry.file_type().is_file() {
+                        return true;
+                    }
+
+                    if !matches_ext(&path, ext_filter.as_deref()) {
+                        return false;
+                    }
+
+                    if !matches_name(entry.file_name().to_str(), name_filter.as_ref()) {
+                        return false;
+                    }
+
+                    let metadata = match entry.metadata() {
+                        Ok(metadata) => metadata,
+                        Err(_) => return false,
+                    };
+                    let size = metadata.len();
+
+                    if let Some(ref size_range) = size_filter {
+                        if !size_range.contains(size) {
+                            return false;
+                        }
+                    }
+
+                    let mtime = metadata
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+
+                    entry.client_state = Some(FileMetadata { size, mtime });
+                    true
                 });
             });
 
-        for entry in walker.into_iter().filter_map(|e| e.ok()) {
-            let path = entry.path().to_path_buf();
-
-            // Skip the root path itself
-            if path == config.path {
-                continue;
-            }
-
-            if entry.file_type().is_file() {
-                files_to_check.push(path);
-            }
-        }
-
-        // Pre-extract filter criteria to avoid borrowing issues in closure
-        let name_filter = self.matcher.clone();
-        let ext_filter = self.config.ext.clone();
-        let size_filter = self.config.size_range.clone();
-
-        // Parallel file processing - only ONE metadata call per file
-        let matched_entries: Vec<FileEntry> = files_to_check
-            .par_iter()
-            .filter_map(|path| {
-                // Extension filter (no IO needed)
-                if let Some(ref ext) = ext_filter {
-                    let path_ext = path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("");
-                    if path_ext != *ext {
-                        return None;
-                    }
-                }
-
-                // Pattern match (no IO needed)
-                if let Some(ref matcher) = name_filter {
-                    if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
-                        if !matcher.is_match(filename) {
-                            return None;
-                        }
-                    } else {
-                        return None;
-                    }
-                }
-
-                // Get metadata ONCE for size + mtime, then check size filter
-                let metadata = match fs::metadata(path) {
-                    Ok(m) => m,
-                    Err(_) => return None,
-                };
-
-                // Size filter (using same metadata we just got)
-                if let Some(ref size_range) = size_filter {
-                    if !size_range.contains(metadata.len()) {
-                        return None;
-                    }
-                }
-
-                // Extract mtime
-                let mtime = metadata
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
+        walker
+            .into_iter()
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let metadata = entry.client_state?;
 
                 Some(FileEntry {
-                    path: path.clone(),
-                    size: metadata.len(),
-                    mtime,
+                    path: entry.path(),
+                    size: metadata.size,
+                    mtime: metadata.mtime,
                 })
             })
-            .collect();
+            .collect()
+    }
+}
 
-        matched_entries
+fn matches_ext(path: &Path, ext_filter: Option<&str>) -> bool {
+    match ext_filter {
+        Some(ext) => path.extension().and_then(|e| e.to_str()) == Some(ext),
+        None => true,
+    }
+}
+
+fn matches_name(filename: Option<&str>, name_filter: Option<&Matcher>) -> bool {
+    match name_filter {
+        Some(matcher) => filename.is_some_and(|name| matcher.is_match(name)),
+        None => true,
     }
 }
 
