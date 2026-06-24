@@ -140,10 +140,7 @@ fn print_help() {
 
 fn parse_and_execute(input: &str, output: &mut Output) -> Result<()> {
     // 构造 clap 命令行参数
-    let args_vec: Vec<String> = input
-        .split_whitespace()
-        .flat_map(|s| shell_split(s))
-        .collect();
+    let args_vec = shell_split(input);
     
     // 提取第一个词作为命令名称，后面的是参数
     let args: Vec<&str> = args_vec.iter().map(|s| s.as_str()).collect();
@@ -151,13 +148,13 @@ fn parse_and_execute(input: &str, output: &mut Output) -> Result<()> {
     // 找到 "find" 命令的位置
     let find_idx = args.iter().position(|&s| s == "find");
     
-    let search_args: Vec<&str> = match find_idx {
-        Some(idx) => args[idx + 1..].to_vec(),
-        None => args[0..].to_vec(),
+    let search_args = match find_idx {
+        Some(idx) => &args[idx + 1..],
+        None => &args[..],
     };
     
     // 手动解析参数
-    let config = parse_search_args(&search_args)?;
+    let config = parse_search_args(search_args)?;
     
     // 验证路径
     if !config.path.exists() {
@@ -208,10 +205,9 @@ fn shell_split(s: &str) -> Vec<String> {
             quote_char = c;
         } else if in_quotes && c == quote_char {
             in_quotes = false;
-        } else if !in_quotes && c == ' ' {
+        } else if !in_quotes && c.is_whitespace() {
             if !current.is_empty() {
-                result.push(current.clone());
-                current.clear();
+                result.push(std::mem::take(&mut current));
             }
         } else {
             current.push(c);
@@ -328,4 +324,31 @@ fn parse_search_args(args: &[&str]) -> Result<SearchConfig> {
         max_depth,
         interactive,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_search_args, shell_split};
+
+    #[test]
+    fn shell_split_preserves_quoted_spaces() {
+        assert_eq!(
+            shell_split("find . -n \"hello world.txt\""),
+            vec![
+                "find".to_string(),
+                ".".to_string(),
+                "-n".to_string(),
+                "hello world.txt".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_search_args_keeps_quoted_pattern_as_one_argument() {
+        let args = shell_split("find . -n 'hello world.txt'");
+        let borrowed: Vec<_> = args.iter().map(String::as_str).collect();
+        let config = parse_search_args(&borrowed[1..]).unwrap();
+
+        assert_eq!(config.pattern.as_deref(), Some("hello world.txt"));
+    }
 }
