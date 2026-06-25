@@ -2,7 +2,10 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::process::Command;
 
-pub fn interactive_select(entries: Vec<crate::scanner::FileEntry>, search_root: &Path) -> io::Result<()> {
+pub fn interactive_select(
+    entries: Vec<crate::scanner::FileEntry>,
+    search_root: &Path,
+) -> io::Result<()> {
     if entries.is_empty() {
         println!("No files found.");
         return Ok(());
@@ -19,12 +22,7 @@ pub fn interactive_select(entries: Vec<crate::scanner::FileEntry>, search_root: 
             &entry.path
         };
 
-        writeln!(
-            handle,
-            "[{}] {}",
-            i + 1,
-            relative_path.display()
-        )?;
+        writeln!(handle, "[{}] {}", i + 1, relative_path.display())?;
     }
     drop(handle);
 
@@ -57,7 +55,10 @@ pub fn interactive_select(entries: Vec<crate::scanner::FileEntry>, search_root: 
                 break;
             }
             _ => {
-                print!("Invalid selection. Enter a number (1-{}), or q to quit: ", entries.len());
+                print!(
+                    "Invalid selection. Enter a number (1-{}), or q to quit: ",
+                    entries.len()
+                );
                 io::stdout().flush()?;
             }
         }

@@ -1,3 +1,5 @@
+use std::fmt;
+use std::io::{self, Write};
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -28,28 +30,55 @@ impl Output {
         }
     }
 
-    pub fn print_entry(&self, idx: usize, path: &Path, size: u64, mtime: u64) -> std::io::Result<()> {
+    fn write_colored<W: Write + ?Sized>(
+        &self,
+        writer: &mut W,
+        code: &str,
+        args: fmt::Arguments<'_>,
+    ) -> io::Result<()> {
+        if self.is_tty {
+            write!(writer, "{code}")?;
+            writer.write_fmt(args)?;
+            write!(writer, "{RESET}")
+        } else {
+            writer.write_fmt(args)
+        }
+    }
+
+    pub fn write_entry<W: Write>(
+        &self,
+        writer: &mut W,
+        idx: usize,
+        path: &Path,
+        size: u64,
+        mtime: u64,
+    ) -> io::Result<()> {
         // File number
-        print!("{} ", self.color(CYAN, &format!("[{}]", idx)));
+        self.write_colored(writer, CYAN, format_args!("[{}]", idx))?;
+        write!(writer, " ")?;
 
         // File name (last component)
         if let Some(name) = path.file_name() {
-            print!("{}", self.color(GREEN, &name.to_string_lossy()));
+            self.write_colored(writer, GREEN, format_args!("{}", name.to_string_lossy()))?;
         }
 
         // Full path in parentheses
         if let Some(parent) = path.parent() {
             let parent_str = parent.to_string_lossy();
             if parent_str != "." {
-                print!(" {}", self.color(DIM, &format!("({})", parent_str)));
+                write!(writer, " ")?;
+                self.write_colored(writer, DIM, format_args!("({})", parent_str))?;
             }
         }
 
         // Size
-        print!(" {}", self.color(YELLOW, &format_size(size)));
+        write!(writer, " ")?;
+        self.write_colored(writer, YELLOW, format_args!("{}", format_size(size)))?;
 
         // Modified time
-        if let Some(time) = SystemTime::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(mtime)) {
+        if let Some(time) =
+            SystemTime::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(mtime))
+        {
             if let Ok(datetime) = time.duration_since(SystemTime::UNIX_EPOCH) {
                 let secs = datetime.as_secs();
                 let days = secs / 86400;
@@ -82,16 +111,27 @@ impl Output {
                     month += 1;
                 }
                 let day = remaining_days + 1;
-                print!(" {}", self.color(DIM, &format!("{:04}-{:02}-{:02} {:02}:{:02}", year, month, day, hours, minutes)));
+                write!(writer, " ")?;
+                self.write_colored(
+                    writer,
+                    DIM,
+                    format_args!(
+                        "{:04}-{:02}-{:02} {:02}:{:02}",
+                        year, month, day, hours, minutes
+                    ),
+                )?;
             }
         }
 
-        println!();
+        writeln!(writer)?;
         Ok(())
     }
 
     pub fn print_prompt(&self, count: usize) -> std::io::Result<()> {
-        println!("\nFound {} file(s). Enter number to open (q to quit):", self.color(CYAN, &count.to_string()));
+        println!(
+            "\nFound {} file(s). Enter number to open (q to quit):",
+            self.color(CYAN, &count.to_string())
+        );
         Ok(())
     }
 

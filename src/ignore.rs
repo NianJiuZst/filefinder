@@ -23,7 +23,11 @@ impl IgnoreRules {
         if gitignore_path.exists() {
             let (glob, err) = Gitignore::new(&gitignore_path);
             if let Some(e) = err {
-                eprintln!("Warning: Failed to parse {}: {}", gitignore_path.display(), e);
+                eprintln!(
+                    "Warning: Failed to parse {}: {}",
+                    gitignore_path.display(),
+                    e
+                );
             }
             self.extra_ignores.push(glob);
         }
@@ -51,9 +55,8 @@ impl IgnoreRules {
 
 fn has_component(path: &Path, name: &str) -> bool {
     let name = OsStr::new(name);
-    path.components().any(|component| {
-        matches!(component, Component::Normal(part) if part == name)
-    })
+    path.components()
+        .any(|component| matches!(component, Component::Normal(part) if part == name))
 }
 
 #[cfg(test)]
@@ -66,10 +69,7 @@ mod tests {
         let rules = IgnoreRules::new(true, true);
 
         assert!(rules.should_ignore(Path::new("/repo/.git/config"), false));
-        assert!(rules.should_ignore(
-            Path::new("/repo/packages/node_modules/lib/index.js"),
-            false
-        ));
+        assert!(rules.should_ignore(Path::new("/repo/packages/node_modules/lib/index.js"), false));
         assert!(!rules.should_ignore(Path::new("/repo/src/git_helpers.rs"), false));
     }
 }

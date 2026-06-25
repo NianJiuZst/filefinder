@@ -77,7 +77,11 @@ pub struct Args {
     #[arg(short, long, help = "Filter by file extension (e.g. rs, txt, md)")]
     pub ext: Option<String>,
 
-    #[arg(short, long, help = "Filter by size range (e.g. 10K..100M, 1M.., ..1G)")]
+    #[arg(
+        short,
+        long,
+        help = "Filter by size range (e.g. 10K..100M, 1M.., ..1G)"
+    )]
     pub size: Option<String>,
 
     #[arg(short, long, help = "Use regex matching instead of glob")]
@@ -111,9 +115,7 @@ pub struct SearchConfig {
 
 impl From<Args> for SearchConfig {
     fn from(args: Args) -> Self {
-        let size_range = args.size.as_ref().and_then(|s| {
-            SizeRange::parse(s).ok()
-        });
+        let size_range = args.size.as_ref().and_then(|s| SizeRange::parse(s).ok());
 
         SearchConfig {
             path: args.path.unwrap_or_else(|| PathBuf::from(".")),
